@@ -1,0 +1,109 @@
+---
+title: "Predicting Exercise"
+author: "Carl McKinney"
+date: "7/16/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+### Introduction
+
+The goal of this project is to predict manner of exercise based on data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants who were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+``` {r load libraries and data and clean data, message=FALSE}
+
+## Load necessary libraries
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+
+## Load data sets
+trainUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl<-"https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+train<-read.csv(trainUrl,na.strings=c("NA","","#DIV0!"))
+test<-read.csv(testUrl,na.strings=c("NA","","#DIV0!"))
+
+## Clean data - remove columns with no data or unnecessary for prediction model, e.g. user name, timestamps, etc
+train<-train[,colSums(is.na(train))==0]
+test<-test[,colSums(is.na(test))==0]
+train<-train[,8:dim(train)[2]]
+test<-test[,8:dim(test)[2]]
+```
+
+### Cross Validation
+Cross validation will be conducted by splitting the training data set into training and testing sets.
+
+``` {r split the training data}
+set.seed(6269)
+inTrain<-createDataPartition(train$classe,p=0.7,list=FALSE)
+trainCV<-train[inTrain,]
+testCV<-train[-inTrain,]
+```
+
+### Exploratory Analysis
+We will attempt to predict the 'classe' variable, which is an unordered factor variable with 5 levels indicating how participants performed a set of 10 repetitions of the Unilateral Dumbell Biceps Curl:
+
+* Class A: exactly according to the specification
+* Class B: throwing the elbows to the front
+* Class C: lifting the dumbbell only halfway
+* Class D: lowering the dumbbell only halfway
+* Class E: throwing the hips to the front
+
+Scatter plots of some of the acceleration data from the training cross-validation set reveal a lot of similarity between classes of performance:
+
+```{r scatter plots of acceleration data}
+qplot(accel_arm_x,accel_arm_y,col=classe,data=trainCV)
+qplot(accel_forearm_x,accel_forearm_y,col=classe,data=trainCV)
+```
+
+### Prediction Models
+We will use all variable not already cleaned from the data set and try both tree and random forests methods for modeling, and then evaluate the models based on accuracy and out-of-sample error.
+
+``` {r tree model}
+## Create model and run prediction
+tree<-rpart(classe~.,data=trainCV,method="class")
+predictTree<-predict(tree,testCV,type="class")
+Ctree<-confusionMatrix(predictTree,testCV$classe)
+Ctree
+
+## Plot prediction tree
+rpart.plot(tree)
+```
+
+The tree diagram is a little hard to see, but in the statistical output we can see that this method is only about 75% accurate at predicting the manner of exercise when applied to the test set.
+
+``` {r random forest model}
+## Create model and run prediction
+RF<-randomForest(classe~.,data=trainCV,method="class")
+predictRF<-predict(RF,testCV,type="class")
+CRF<-confusionMatrix(predictRF,testCV$classe)
+CRF
+
+## Plot predictions against test data
+CV<-testCV
+CV$pred<-testCV$classe==predictRF
+qplot(accel_forearm_x,accel_forearm_y,col=pred,data=CV)
+```
+
+We can see both in the plot and the statistical output that the random forest method is much better at predicting manner of exercise when applied to the test set, with about 99% accuracy.
+
+### Conclusion
+The table below compares the accuracy and out-of-sample error for the tree and random forest models:
+
+Model | Accuracy | Out-of-Sample Error
+------|----------|--------------------
+Tree  |`r Ctree$overall["Accuracy"]` | `r 1-Ctree$overall["Accuracy"]` |
+Random Forest | `r CRF$overall["Accuracy"]` | `r 1-CRF$overall["Accuracy"]` |
+
+Clearly the random forest is a much better model for predicting manner of exercise in this dataset. Below is the prediction for the test set:
+
+``` {r prediction with rf model}
+prediction<-predict(RF,test)
+prediction
+```
+
